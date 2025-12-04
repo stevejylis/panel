@@ -1,0 +1,82 @@
+# ===========================================
+# NEONPULSE SERVER MONITOR - DOCKER COMPOSE
+# ===========================================
+#
+# Usage:
+#   docker-compose up -d
+#
+# To see host system metrics (not container metrics),
+# we mount /proc, /sys and other system paths as read-only.
+#
+# ===========================================
+
+services:
+  neonpulse:
+    build: .
+    container_name: neonpulse-monitor
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      # Comma-separated list of allowed IPs
+      # Supports: single IPs, CIDR notation (192.168.1.0/24), wildcards (192.168.*)
+      - ALLOWED_IPS=${ALLOWED_IPS:-127.0.0.1,::1,192.168.*,10.*,172.16.*}
+
+      # CORS origin (optional, defaults to *)
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+
+      # Port (default 3000)
+      - PORT=3000
+
+    # Mount host system paths for real metrics
+    volumes:
+      # Required for system metrics
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+
+      # Required for disk metrics
+      - /:/host/rootfs:ro
+
+      # Required for real system logs
+      - /var/log:/var/log:ro
+
+      # Docker socket for container info (optional)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    # Needed for system metrics access
+    privileged: false
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+    # Read-only root filesystem (security)
+    read_only: true
+    tmpfs:
+      - /tmp
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ===========================================
+# NETWORKS (optional - for Coolify)
+# ===========================================
+networks:
+  default:
+    name: neonpulse-network
