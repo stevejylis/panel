@@ -8,16 +8,12 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Copy frontend package files
+# Copy frontend package files and install deps
 COPY frontend/package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy frontend source
+# Copy frontend source and build
 COPY frontend/ ./
-
-# Build for production
 RUN npm run build
 
 # ===========================================
@@ -25,40 +21,57 @@ RUN npm run build
 # ===========================================
 FROM node:20-alpine AS production
 
-# Install system utilities for log reading
+# Install system utilities for metrics and logs
 RUN apk add --no-cache \
     procps \
     util-linux \
-    lm-sensors \
-    iproute2
+    iproute2 \
+    curl
 
 WORKDIR /app
 
-# Copy backend
+# Copy backend package files and install deps
 COPY backend/package*.json ./
-RUN npm install --production
+RUN npm install --omit=dev
 
-COPY backend/ ./
+# Copy backend source
+COPY backend/server.js ./
 
-# Copy built frontend to be served by backend
+# Copy built frontend
 COPY --from=frontend-builder /app/frontend/dist ./public
 
-# Create static file serving in backend
-RUN echo 'import express from "express"; import path from "path"; import { fileURLToPath } from "url"; const __dirname = path.dirname(fileURLToPath(import.meta.url)); export const serveStatic = (app) => { app.use(express.static(path.join(__dirname, "public"))); app.get("*", (req, res, next) => { if (req.path.startsWith("/api") || req.path === "/health") return next(); res.sendFile(path.join(__dirname, "public", "index.html")); }); };' > static.js
+# Create static file server module
+RUN cat > static.js << 'EOF'
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
 
-# Modify server to serve static files
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export const serveStatic = (app) => {
+  app.use(express.static(path.join(__dirname, "public")));
+
+  // SPA fallback - serve index.html for non-API routes
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api") || req.path === "/health") {
+      return next();
+    }
+    res.sendFile(path.join(__dirname, "public", "index.html"));
+  });
+};
+EOF
+
+# Inject static serving into server.js
 RUN sed -i "s|app.listen|import { serveStatic } from './static.js'; serveStatic(app);\n\napp.listen|" server.js
 
-# Environment variables
+# Environment
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Expose port
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+# Health check using curl with IPv4
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://127.0.0.1:3000/health || exit 1
 
-# Run the server
 CMD ["node", "server.js"]

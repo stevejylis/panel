@@ -71,8 +71,15 @@ app.use(cors({
   methods: ['GET'],
 }));
 
-app.use(ipWhitelist);
 app.use(express.json());
+
+// Health check BEFORE IP whitelist (for Docker healthcheck)
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
+});
+
+// Apply IP whitelist only to /api routes
+app.use('/api', ipWhitelist);
 
 // Request logging
 app.use((req, res, next) => {
@@ -84,11 +91,6 @@ app.use((req, res, next) => {
 // ============================================
 // API ENDPOINTS
 // ============================================
-
-// Health check (no auth needed for Docker healthcheck)
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: Date.now() });
-});
 
 // System stats (CPU, RAM, disk, network, temperature)
 app.get('/api/stats', async (req, res) => {

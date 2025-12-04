@@ -1,0 +1,12 @@
+# Disable Nixpacks - use Dockerfile instead
+[phases.setup]
+onlyIncludeFiles = []
+
+[phases.install]
+cmds = []
+
+[phases.build]
+cmds = []
+
+[start]
+cmd = ""
